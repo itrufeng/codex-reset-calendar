@@ -215,13 +215,13 @@ def build_forecast_event(
     data: dict[str, Any],
 ) -> list[str] | None:
     """
-    Forecast events come from latest_alert.window.
+    Build a forecast event from latest_alert.window.target_at.
 
-    The window is preserved as an actual calendar interval:
-        DTSTART = window.start_at
-        DTEND   = window.end_at
+    The forecast window may span many hours because start_at is when the
+    alert became active and end_at is its deadline. For calendar display,
+    target_at is a better representation of the predicted reset target.
 
-    We do not invent a time from the statistical 24h/48h probabilities.
+    The event is displayed as a short 15-minute calendar event.
     """
 
     alert = data.get("latest_alert")
@@ -236,15 +236,10 @@ def build_forecast_event(
         print("Forecast: latest_alert.window is missing.")
         return None
 
-    start = parse_datetime(window.get("start_at"))
-    end = parse_datetime(window.get("end_at"))
+    target = parse_datetime(window.get("target_at"))
 
-    if start is None or end is None:
-        print("Forecast: prediction window has no valid start/end.")
-        return None
-
-    if end <= start:
-        print("Forecast: prediction window is invalid.")
+    if target is None:
+        print("Forecast: latest_alert.window.target_at is missing.")
         return None
 
     probabilities = data.get("probabilities")
@@ -262,6 +257,25 @@ def build_forecast_event(
     if localized_summary:
         description_parts.append(str(localized_summary))
         description_parts.append("")
+
+    target_kind = window.get("target_kind")
+    window_label = window.get("label")
+    time_zone = window.get("time_zone")
+
+    if target_kind == "deadline":
+        description_parts.append("该时间表示预测截止时间。")
+    else:
+        description_parts.append("该时间表示预测目标时间。")
+
+    if window_label:
+        description_parts.append(
+            f"预测目标：{window_label}"
+        )
+
+    if time_zone:
+        description_parts.append(
+            f"预测时区：{time_zone}"
+        )
 
     p24 = probabilities.get("rounded_24h")
     p48 = probabilities.get("rounded_48h")
@@ -290,20 +304,6 @@ def build_forecast_event(
             f"预测信号分数：{score}"
         )
 
-    window_label = window.get("label")
-
-    if window_label:
-        description_parts.append(
-            f"预测窗口：{window_label}"
-        )
-
-    time_zone = window.get("time_zone")
-
-    if time_zone:
-        description_parts.append(
-            f"预测窗口时区：{time_zone}"
-        )
-
     description_parts.extend(
         [
             "",
@@ -314,15 +314,15 @@ def build_forecast_event(
 
     alert_id = str(
         alert.get("id")
-        or format_ics_datetime(start)
+        or format_ics_datetime(target)
     )
 
     source_url = alert.get("url") or SOURCE_URL
 
     return make_event(
         uid=f"forecast-{alert_id}@codex-reset-calendar",
-        start=start,
-        end=end,
+        start=target,
+        end=target + timedelta(minutes=15),
         summary="[预测] Codex Reset",
         description="\n".join(description_parts),
         url=source_url,
