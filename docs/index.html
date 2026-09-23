@@ -1,0 +1,121 @@
+<!doctype html>
+
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Codex Reset 中文日历</title>
+
+  <style>
+    body {
+      max-width: 720px;
+      margin: 64px auto;
+      padding: 0 24px;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      line-height: 1.7;
+    }
+
+    code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .subscribe {
+      display: inline-block;
+      margin: 12px 0;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: #111;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .note {
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Codex Reset 中文日历</h1>
+
+  <p>
+    将 Codex Reset 的已确认重置记录和未来预测
+    转换成可订阅的 iCalendar。
+  </p>
+
+  <ul>
+    <li>
+      <strong>Codex Reset</strong>
+      — 已经确认发生的 Reset
+    </li>
+
+    <li>
+      <strong>[预测] Codex Reset</strong>
+      — 尚未确认的未来预测
+    </li>
+  </ul>
+
+  <p>
+    带有 <code>[预测]</code> 的事件只是预测，
+    不代表 Reset 一定会发生。
+  </p>
+
+  <a
+    id="subscribe"
+    class="subscribe"
+    href="#"
+  >
+    添加到日历
+  </a>
+
+  <p>
+    <a id="ics" href="calendar.ics">
+      查看 calendar.ics
+    </a>
+  </p>
+
+  <hr>
+
+  <p class="note">
+    Data:
+    <a
+      href="https://codex-reset.com/"
+      rel="noopener"
+    >
+      codex-reset.com
+    </a>
+  </p>
+
+  <p class="note">
+    本项目不是 OpenAI 或 codex-reset.com 的官方项目。
+  </p>
+
+  <script>
+    const icsUrl = new URL("calendar.ics", window.location.href);
+
+    const webcalUrl =
+      "webcal://" +
+      icsUrl.host +
+      icsUrl.pathname;
+
+    document
+      .getElementById("subscribe")
+      .setAttribute("href", webcalUrl);
+
+    document
+      .getElementById("ics")
+      .setAttribute("href", icsUrl.href);
+  </script>
+</body>
+</html>
