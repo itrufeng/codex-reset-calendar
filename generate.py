@@ -215,13 +215,11 @@ def build_forecast_event(
     data: dict[str, Any],
 ) -> list[str] | None:
     """
-    Build a forecast event from latest_alert.window.target_at.
+    Build a short forecast event at the beginning of the forecast window.
 
-    The forecast window may span many hours because start_at is when the
-    alert became active and end_at is its deadline. For calendar display,
-    target_at is a better representation of the predicted reset target.
-
-    The event is displayed as a short 15-minute calendar event.
+    start_at represents when the forecast/alert became active.
+    The deadline/target remains available in the event description,
+    rather than being used as the calendar event time.
     """
 
     alert = data.get("latest_alert")
@@ -236,10 +234,10 @@ def build_forecast_event(
         print("Forecast: latest_alert.window is missing.")
         return None
 
-    target = parse_datetime(window.get("target_at"))
+    start = parse_datetime(window.get("start_at"))
 
-    if target is None:
-        print("Forecast: latest_alert.window.target_at is missing.")
+    if start is None:
+        print("Forecast: latest_alert.window.start_at is missing.")
         return None
 
     probabilities = data.get("probabilities")
@@ -258,18 +256,12 @@ def build_forecast_event(
         description_parts.append(str(localized_summary))
         description_parts.append("")
 
-    target_kind = window.get("target_kind")
     window_label = window.get("label")
     time_zone = window.get("time_zone")
 
-    if target_kind == "deadline":
-        description_parts.append("该时间表示预测截止时间。")
-    else:
-        description_parts.append("该时间表示预测目标时间。")
-
     if window_label:
         description_parts.append(
-            f"预测目标：{window_label}"
+            f"预测截止：{window_label}"
         )
 
     if time_zone:
@@ -314,15 +306,15 @@ def build_forecast_event(
 
     alert_id = str(
         alert.get("id")
-        or format_ics_datetime(target)
+        or format_ics_datetime(start)
     )
 
     source_url = alert.get("url") or SOURCE_URL
 
     return make_event(
         uid=f"forecast-{alert_id}@codex-reset-calendar",
-        start=target,
-        end=target + timedelta(minutes=15),
+        start=start,
+        end=start + timedelta(minutes=15),
         summary="[预测] Codex Reset",
         description="\n".join(description_parts),
         url=source_url,
