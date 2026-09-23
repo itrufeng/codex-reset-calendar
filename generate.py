@@ -339,7 +339,7 @@ def generate_calendar(
         "PRODID:-//codex-reset-calendar//ZH-CN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
-        "X-WR-CALNAME:Codex Reset 中文日历",
+        "X-WR-CALNAME:Codex Reset 日历",
         "X-WR-CALDESC:已确认的 Codex Reset 与未来预测",
         "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
         "X-PUBLISHED-TTL:PT1H",
