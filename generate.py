@@ -98,7 +98,6 @@ def escape_ics(value: Any) -> str:
 def fold_ics_line(line: str, limit: int = 75) -> list[str]:
     """
     RFC 5545 recommends folding content lines at 75 octets.
-    Do not split a UTF-8 character in the middle.
     """
     result: list[str] = []
     current = ""
@@ -142,7 +141,6 @@ def make_event(
     add_line(lines, "DESCRIPTION", description)
 
     if url:
-        # URL itself does not need text escaping beyond the normal ICS rules.
         add_line(lines, "URL", url)
 
     lines.append("END:VEVENT")
@@ -165,12 +163,15 @@ def build_timeline_events(data: dict[str, Any]) -> list[list[str]]:
         if start is None:
             continue
 
-        event_id = str(item.get("id") or format_ics_datetime(start))
-        source_url = item.get("url") or SOURCE_URL
+        event_id = str(
+            item.get("id")
+            or format_ics_datetime(start)
+        )
 
+        source_url = item.get("url") or SOURCE_URL
         source_summary = item.get("summary")
 
-        description_parts = []
+        description_parts: list[str] = []
 
         if source_summary:
             description_parts.append(str(source_summary))
@@ -197,49 +198,53 @@ def build_timeline_events(data: dict[str, Any]) -> list[list[str]]:
     return events
 
 
-def find_forecast_time(signal: dict[str, Any]) -> datetime | None:
-    """
-    Extract a concrete time only when the forecast signal actually
-    contains one.
+def confidence_zh(value: Any) -> str | None:
+    mapping = {
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+    }
 
-    We deliberately do NOT turn a 24h/48h probability into an invented
-    calendar time.
-    """
+    if not isinstance(value, str):
+        return None
 
-    candidates = (
-        "target_at",
-        "expected_at",
-        "deadline_at",
-        "window_end",
-        "ends_at",
-        "end_at",
-        "at",
-    )
-
-    for key in candidates:
-        dt = parse_datetime(signal.get(key))
-
-        if dt is not None:
-            return dt
-
-    return None
+    return mapping.get(value.lower(), value)
 
 
 def build_forecast_event(
     data: dict[str, Any],
 ) -> list[str] | None:
-    signal = data.get("official_signal")
+    """
+    Forecast events come from latest_alert.window.
 
-    if not isinstance(signal, dict):
+    The window is preserved as an actual calendar interval:
+        DTSTART = window.start_at
+        DTEND   = window.end_at
+
+    We do not invent a time from the statistical 24h/48h probabilities.
+    """
+
+    alert = data.get("latest_alert")
+
+    if not isinstance(alert, dict):
+        print("Forecast: latest_alert is missing.")
         return None
 
-    start = find_forecast_time(signal)
+    window = alert.get("window")
 
-    if start is None:
-        print(
-            "Forecast has no concrete documented calendar time; "
-            "skipping forecast event."
-        )
+    if not isinstance(window, dict):
+        print("Forecast: latest_alert.window is missing.")
+        return None
+
+    start = parse_datetime(window.get("start_at"))
+    end = parse_datetime(window.get("end_at"))
+
+    if start is None or end is None:
+        print("Forecast: prediction window has no valid start/end.")
+        return None
+
+    if end <= start:
+        print("Forecast: prediction window is invalid.")
         return None
 
     probabilities = data.get("probabilities")
@@ -249,33 +254,54 @@ def build_forecast_event(
 
     description_parts = [
         "这是预测事件，并不代表 Codex Reset 一定会发生。",
+        "",
     ]
+
+    localized_summary = alert.get("localized_summary")
+
+    if localized_summary:
+        description_parts.append(str(localized_summary))
+        description_parts.append("")
 
     p24 = probabilities.get("rounded_24h")
     p48 = probabilities.get("rounded_48h")
-    confidence = data.get("confidence")
 
     if p24 is not None:
-        description_parts.append(f"24 小时内概率：{p24}%")
+        description_parts.append(
+            f"未来 24 小时重置概率：{p24}%"
+        )
 
     if p48 is not None:
-        description_parts.append(f"48 小时内概率：{p48}%")
+        description_parts.append(
+            f"48 小时内重置概率：{p48}%"
+        )
+
+    confidence = confidence_zh(data.get("confidence"))
 
     if confidence:
-        description_parts.append(f"置信度：{confidence}")
+        description_parts.append(
+            f"模型置信度：{confidence}"
+        )
 
-    signal_summary = (
-        signal.get("summary")
-        or signal.get("text")
-        or signal.get("message")
-    )
+    score = alert.get("score")
 
-    if signal_summary:
-        description_parts.extend(
-            [
-                "",
-                str(signal_summary),
-            ]
+    if score is not None:
+        description_parts.append(
+            f"预测信号分数：{score}"
+        )
+
+    window_label = window.get("label")
+
+    if window_label:
+        description_parts.append(
+            f"预测窗口：{window_label}"
+        )
+
+    time_zone = window.get("time_zone")
+
+    if time_zone:
+        description_parts.append(
+            f"预测窗口时区：{time_zone}"
         )
 
     description_parts.extend(
@@ -286,17 +312,20 @@ def build_forecast_event(
         ]
     )
 
-    # The UID follows the predicted target rather than updated_at.
-    # Recalculating probability therefore does not create a new event.
-    uid_time = start.strftime("%Y%m%dT%H%M%SZ")
+    alert_id = str(
+        alert.get("id")
+        or format_ics_datetime(start)
+    )
+
+    source_url = alert.get("url") or SOURCE_URL
 
     return make_event(
-        uid=f"forecast-{uid_time}@codex-reset-calendar",
+        uid=f"forecast-{alert_id}@codex-reset-calendar",
         start=start,
-        end=start + timedelta(minutes=15),
+        end=end,
         summary="[预测] Codex Reset",
         description="\n".join(description_parts),
-        url=SOURCE_URL,
+        url=source_url,
     )
 
 
@@ -329,7 +358,10 @@ def generate_calendar(
     lines.append("END:VCALENDAR")
 
     print(f"Timeline events: {len(timeline_events)}")
-    print(f"Forecast event: {'yes' if forecast_event else 'no'}")
+    print(
+        f"Forecast event: "
+        f"{'yes' if forecast_event else 'no'}"
+    )
 
     return "\r\n".join(lines) + "\r\n"
 
@@ -341,12 +373,21 @@ def main() -> None:
     print(f"Fetching forecast: {FORECAST_URL}")
     forecast = fetch_json(FORECAST_URL)
 
-    calendar = generate_calendar(timeline, forecast)
+    calendar = generate_calendar(
+        timeline,
+        forecast,
+    )
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    # newline="" prevents Python from altering the CRLF required by ICS.
-    with OUTPUT.open("w", encoding="utf-8", newline="") as file:
+    with OUTPUT.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as file:
         file.write(calendar)
 
     print(f"Generated {OUTPUT}")
